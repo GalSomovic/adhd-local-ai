@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from datetime import datetime
 
 from nio import AsyncClient, LoginResponse, RoomCreateResponse, RoomMessageText
@@ -31,6 +32,7 @@ class Bot:
         self.llm = LLM(schemas, dispatch)
 
     async def send(self, text: str):
+        log.info("bot: %s", text)
         await self.client.room_send(
             self.room_id,
             message_type="m.room.message",
@@ -75,10 +77,33 @@ class Bot:
         if text.startswith("!"):
             await self._command(text)
             return
+        fast = self._fast_alarm(text)
+        if fast:
+            await self.send(fast)
+            return
         if resolved and len(text) < 80:
             await self.send("רשמתי ✅")
         reply = await self.llm.chat(text)
         await self.send(reply)
+
+    def _fast_alarm(self, text):
+        """Deterministic parse of the golden alarm phrasings — no LLM involved."""
+        result = None
+        m = (re.search(r"תעיר\s+אותי\s+ב-?\s*(\d{1,2}:\d{2})", text)
+             or re.search(r"wake me(?: up)? at (\d{1,2}:\d{2})", text, re.I))
+        if m:
+            result = self.engine.create_checkin(text, "once", at_time=m.group(1), kind="alarm")
+        else:
+            m = (re.search(r"תעיר\s+אותי\s+ב?עוד\s+(\d+)\s*(דק|שע)", text)
+                 or re.search(r"wake me(?: up)? in (\d+)\s*(min|m\b|hour|h\b)", text, re.I))
+            if m:
+                mins = int(m.group(1)) * (60 if m.group(2).startswith(("שע", "h")) else 1)
+                result = self.engine.create_checkin(text, "once", in_minutes=mins, kind="alarm")
+        if not result:
+            return None
+        if result.get("error"):
+            return f"⚠️ {result['error']}"
+        return f"נקבע ⏰ ל-{result['fires_at']}"
 
     async def _command(self, text: str):
         cmd, _, arg = text.partition(" ")

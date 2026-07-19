@@ -66,6 +66,7 @@ class LLM:
                 self.history.append({"role": "assistant", "content": reply})
                 return reply
             messages.append(msg)
+            scheduled = []
             for call in tool_calls:
                 name = call["function"]["name"]
                 try:
@@ -74,6 +75,8 @@ class LLM:
                 except Exception as exc:
                     log.exception("tool %s failed", name)
                     result = {"error": str(exc)}
+                if isinstance(result, dict) and result.get("fires_at"):
+                    scheduled.append(result)
                 messages.append(
                     {
                         "role": "tool",
@@ -81,6 +84,16 @@ class LLM:
                         "content": json.dumps(result, ensure_ascii=False, default=str),
                     }
                 )
+            # scheduling confirmations are authored by code, not the model —
+            # the model cannot claim something was scheduled when it wasn't
+            if scheduled and len(scheduled) == len(tool_calls):
+                reply = "\n".join(
+                    f"נקבע {'⏰' if r.get('kind') == 'alarm' else '❓'} "
+                    f"ל-{r['fires_at']} — {r['question']}"
+                    for r in scheduled
+                )
+                self.history.append({"role": "assistant", "content": reply})
+                return reply
         return "עשיתי כמה פעולות אבל הסתבכתי בניסוח תשובה — תבדוק עם !checkins"
 
     async def _complete(self, messages) -> dict:
