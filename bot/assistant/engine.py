@@ -27,8 +27,13 @@ class Engine:
         self.scheduler = AsyncIOScheduler(timezone=config.TZ)
 
     def start(self):
-        for row in self.conn.execute("SELECT * FROM checkins WHERE active = 1"):
-            self._schedule(row)
+        for row in self.conn.execute("SELECT * FROM checkins WHERE active = 1").fetchall():
+            try:
+                self._schedule(row)
+            except Exception:
+                log.exception("unschedulable checkin %s — deactivating", row["id"])
+                self.conn.execute("UPDATE checkins SET active = 0 WHERE id = ?", (row["id"],))
+                self.conn.commit()
         self.scheduler.add_job(self._tick, "interval", seconds=30, id="tick")
         self.scheduler.start()
 
