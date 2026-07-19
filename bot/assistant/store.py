@@ -33,6 +33,10 @@ def connect() -> sqlite3.Connection:
     conn = sqlite3.connect(os.path.join(config.DATA_DIR, "assistant.db"))
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(checkins)")}
+    if "kind" not in cols:
+        conn.execute("ALTER TABLE checkins ADD COLUMN kind TEXT NOT NULL DEFAULT 'checkin'")
+        conn.commit()
     return conn
 
 

@@ -34,12 +34,13 @@ class Engine:
 
     # -- check-in management (called by the skills layer) --
 
-    def create_checkin(self, question, repeat, at_time=None, at_iso=None, window_minutes=None):
+    def create_checkin(self, question, repeat, at_time=None, at_iso=None,
+                       window_minutes=None, kind="checkin"):
         window = window_minutes or config.DEFAULT_WINDOW_MINUTES
         cur = self.conn.execute(
-            "INSERT INTO checkins (question, repeat, at_time, at_iso, window_minutes) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (question, repeat, at_time, at_iso, window),
+            "INSERT INTO checkins (question, repeat, at_time, at_iso, window_minutes, kind) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (question, repeat, at_time, at_iso, window, kind),
         )
         self.conn.commit()
         row = self.conn.execute("SELECT * FROM checkins WHERE id = ?", (cur.lastrowid,)).fetchone()
@@ -82,8 +83,9 @@ class Engine:
         if not row:
             return
         now = datetime.now(config.TZ)
-        deadline = now + timedelta(minutes=row["window_minutes"])
-        self.conn.execute(
+        is_alarm = row["kind"] == "alarm"
+        deadline = now if is_alarm else now + timedelta(minutes=row["window_minutes"])
+        cur = self.conn.execute(
             "INSERT INTO pending (checkin_id, question, sent_at, deadline, status) "
             "VALUES (?, ?, ?, ?, 'waiting')",
             (checkin_id, row["question"], now.isoformat(), deadline.isoformat()),
@@ -91,10 +93,17 @@ class Engine:
         if row["repeat"] == "once":
             self.conn.execute("UPDATE checkins SET active = 0 WHERE id = ?", (checkin_id,))
         self.conn.commit()
-        await self.send_message(
-            f"❓ {row['question']}\n"
-            f"(ענה תוך {row['window_minutes']} דקות, אחרת אני מפעיל אזעקה 🚨)"
-        )
+        if is_alarm:
+            await self.send_message(f"⏰ שעון מעורר: {row['question']}")
+            pending = self.conn.execute(
+                "SELECT * FROM pending WHERE id = ?", (cur.lastrowid,)
+            ).fetchone()
+            await self._escalate(pending, "escalated")
+        else:
+            await self.send_message(
+                f"❓ {row['question']}\n"
+                f"(ענה תוך {row['window_minutes']} דקות, אחרת אני מפעיל שעון מעורר ⏰)"
+            )
 
     async def resolve_pending(self) -> int:
         """Owner replied in chat: settle everything open, cancelling live alarms."""
@@ -145,7 +154,7 @@ class Engine:
         if status.get("acknowledged"):
             self.conn.execute("UPDATE pending SET status = 'acked' WHERE id = ?", (row["id"],))
             self.conn.commit()
-            await self.send_message(f"קיבלתי אישור באזעקה 🚨✅ — אז מה עם: {row['question']}")
+            await self.send_message(f"כיבית את השעון המעורר ⏰✅ — {row['question']}")
         elif status.get("expired"):
             if row["status"] == "escalated":
                 await self._escalate(row, "realarmed")
@@ -154,4 +163,4 @@ class Engine:
                     "UPDATE pending SET status = 'missed' WHERE id = ?", (row["id"],)
                 )
                 self.conn.commit()
-                await self.send_message(f"⚠️ פספסת גם את האזעקה השנייה: {row['question']}")
+                await self.send_message(f"⚠️ גם השעון המעורר השני לא נענה: {row['question']}")

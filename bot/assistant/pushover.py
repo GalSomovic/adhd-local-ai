@@ -4,7 +4,7 @@ from . import config
 API = "https://api.pushover.net/1"
 
 
-async def send_emergency(message: str, title: str = "ADHD Assistant") -> str:
+async def send_emergency(message: str, title: str = "⏰ שעון מעורר") -> str:
     """Fire a critical alert. Returns the receipt id used to track acknowledgement."""
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(

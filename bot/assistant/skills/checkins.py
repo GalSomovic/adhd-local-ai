@@ -4,6 +4,9 @@ def build(ctx):
     async def create_checkin(question, repeat, at_time=None, at_iso=None, window_minutes=None):
         return engine.create_checkin(question, repeat, at_time, at_iso, window_minutes)
 
+    async def set_alarm(label, repeat, at_time=None, at_iso=None):
+        return engine.create_checkin(label, repeat, at_time, at_iso, kind="alarm")
+
     async def list_checkins():
         return {"checkins": engine.list_checkins()}
 
@@ -11,6 +14,32 @@ def build(ctx):
         return engine.cancel_checkin(int(checkin_id))
 
     return {
+        "set_alarm": (
+            {
+                "type": "function",
+                "function": {
+                    "name": "set_alarm",
+                    "description": (
+                        "Set a שעון מעורר (wake-up alarm): at the given time the user's phone "
+                        "rings at full volume (bypasses mute) and keeps re-alerting until "
+                        "acknowledged. Use when the user wants an alarm / שעון מעורר / to be "
+                        "woken or paged at a specific time. repeat='daily' with at_time='HH:MM', "
+                        "or repeat='once' with at_iso='YYYY-MM-DDTHH:MM'."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "label": {"type": "string", "description": "What the alarm is for, in the user's language"},
+                            "repeat": {"type": "string", "enum": ["daily", "once"]},
+                            "at_time": {"type": "string", "description": "HH:MM, for daily"},
+                            "at_iso": {"type": "string", "description": "ISO datetime, for once"},
+                        },
+                        "required": ["label", "repeat"],
+                    },
+                },
+            },
+            set_alarm,
+        ),
         "create_checkin": (
             {
                 "type": "function",

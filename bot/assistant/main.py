@@ -13,9 +13,9 @@ log = logging.getLogger("assistant")
 
 HELP = """\
 פקודות ישירות (עוקפות את המודל):
-!checkins — רשימת צ'ק-אינים פעילים
-!cancel <id> — ביטול צ'ק-אין
-!testalarm — בדיקת מסלול האזעקה מקצה לקצה
+!checkins — רשימת צ'ק-אינים ושעונים מעוררים פעילים
+!cancel <id> — ביטול לפי מזהה
+!testalarm — בדיקת שעון מעורר מקצה לקצה
 !help — ההודעה הזאת
 כל הודעה אחרת הולכת לעוזר עצמו."""
 
@@ -88,8 +88,9 @@ class Bot:
                 await self.send("אין צ'ק-אינים פעילים")
                 return
             lines = [
-                f"[{r['id']}] {r['question']} — {r['repeat']} "
-                f"{r['at_time'] or r['at_iso']} (חלון {r['window_minutes']} דק')"
+                f"[{r['id']}] {'⏰' if r['kind'] == 'alarm' else '❓'} {r['question']} — "
+                f"{r['repeat']} {r['at_time'] or r['at_iso']}"
+                + ("" if r["kind"] == "alarm" else f" (חלון {r['window_minutes']} דק')")
                 for r in rows
             ]
             await self.send("\n".join(lines))
@@ -97,8 +98,8 @@ class Bot:
             self.engine.cancel_checkin(int(arg))
             await self.send(f"בוטל [{arg}] ✅")
         elif cmd == "!testalarm":
-            receipt = await pushover.send_emergency("בדיקת אזעקה — תאשר בטלפון")
-            await self.send(f"אזעקת בדיקה נשלחה 🚨 (receipt {receipt})")
+            receipt = await pushover.send_emergency("בדיקת שעון מעורר — תאשר בטלפון")
+            await self.send(f"שעון מעורר לבדיקה נשלח ⏰ (receipt {receipt})")
         else:
             await self.send(HELP)
 
