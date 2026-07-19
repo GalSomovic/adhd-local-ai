@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: assistant-bot
+  labels:
+    app: assistant-bot
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: assistant-bot
+  template:
+    metadata:
+      labels:
+        app: assistant-bot
+    spec:
+      containers:
+        - name: bot
+          image: adhd-assistant
+          imagePullPolicy: Always
+          env:
+            - name: TZ
+              value: Asia/Jerusalem
+            - name: MATRIX_HOMESERVER
+              value: http://tuwunel.assistant.svc.cluster.local:8008
+            - name: MATRIX_USER
+              value: "@bot:matrix.galsgames.dpdns.org"
+            - name: OWNER_MXID
+              value: "@gal:matrix.galsgames.dpdns.org"
+            - name: OLLAMA_URL
+              value: http://ollama.assistant.svc.cluster.local:11434
+            - name: OLLAMA_MODEL
+              value: qwen3:4b-instruct-2507-q4_K_M
+            - name: DATA_DIR
+              value: /data
+          envFrom:
+            - secretRef:
+                name: assistant-bot
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          hostPath:
+            path: /var/lib/assistant/bot
+            type: DirectoryOrCreate

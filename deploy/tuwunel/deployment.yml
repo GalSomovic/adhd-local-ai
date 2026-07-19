@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tuwunel
+  labels:
+    app: tuwunel
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: tuwunel
+  template:
+    metadata:
+      labels:
+        app: tuwunel
+    spec:
+      containers:
+        - name: tuwunel
+          image: ghcr.io/matrix-construct/tuwunel:latest
+          env:
+            - name: TUWUNEL_SERVER_NAME
+              value: matrix.galsgames.dpdns.org
+            - name: TUWUNEL_DATABASE_PATH
+              value: /data
+            - name: TUWUNEL_ADDRESS
+              value: 0.0.0.0
+            - name: TUWUNEL_PORT
+              value: "8008"
+            - name: TUWUNEL_ALLOW_FEDERATION
+              value: "false"
+            - name: TUWUNEL_ALLOW_REGISTRATION
+              value: "true"
+            - name: TUWUNEL_REGISTRATION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: tuwunel
+                  key: REGISTRATION_TOKEN
+          ports:
+            - containerPort: 8008
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          hostPath:
+            path: /var/lib/assistant/tuwunel
+            type: DirectoryOrCreate
