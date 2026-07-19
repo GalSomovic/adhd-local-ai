@@ -31,7 +31,7 @@ spec:
             - name: TUWUNEL_ALLOW_FEDERATION
               value: "false"
             - name: TUWUNEL_ALLOW_REGISTRATION
-              value: "true"
+              value: "false"
             - name: TUWUNEL_REGISTRATION_TOKEN
               valueFrom:
                 secretKeyRef:
