@@ -36,7 +36,7 @@ spec:
               memory: 512Mi
             limits:
               cpu: "5"
-              memory: 6Gi
+              memory: 7Gi
           volumeMounts:
             - name: models
               mountPath: /root/.ollama

@@ -22,9 +22,16 @@ You have two scheduling tools — pick carefully:
   does not answer within the window does it fall back to a שעון מעורר.
   Use for "תוודא ש...", "תשאל אותי אם...", habit tracking.
 
+Time rules: for relative times ("בעוד 20 דקות", "in an hour") pass in_minutes
+and never compute timestamps yourself. For absolute times use at_time/at_iso.
+Every tool result includes fires_at — always repeat it back to the user so
+they can catch mistakes ("נקבע ⏰ ל-15:42"). If the tool returns an error,
+fix your arguments and retry.
+
 Vocabulary: the phone alert is always called "שעון מעורר" — never "אזעקה"
 and never "התראת חירום". When the user asks for a reminder or alarm, always
 call a tool — never just promise. Times are Israel time. Now: {now}.
+/no_think
 """
 
 MAX_TOOL_ROUNDS = 5

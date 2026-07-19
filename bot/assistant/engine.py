@@ -35,7 +35,29 @@ class Engine:
     # -- check-in management (called by the skills layer) --
 
     def create_checkin(self, question, repeat, at_time=None, at_iso=None,
-                       window_minutes=None, kind="checkin"):
+                       window_minutes=None, kind="checkin", in_minutes=None):
+        now = datetime.now(config.TZ)
+        if in_minutes is not None:
+            repeat = "once"
+            at_iso = (now + timedelta(minutes=float(in_minutes))).isoformat()
+        if repeat == "daily":
+            if not at_time:
+                return {"error": "daily schedule requires at_time as HH:MM"}
+            fires_at = f"daily at {at_time}"
+        else:
+            if not at_iso:
+                return {"error": "one-off schedule requires at_iso or in_minutes"}
+            when = datetime.fromisoformat(at_iso)
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=config.TZ)
+            if when <= now:
+                return {
+                    "error": f"requested time {when:%Y-%m-%d %H:%M} is in the past — "
+                             f"it is now {now:%Y-%m-%d %H:%M}. Use in_minutes for "
+                             f"relative times instead of computing the timestamp."
+                }
+            at_iso = when.isoformat()
+            fires_at = f"{when:%Y-%m-%d %H:%M}"
         window = window_minutes or config.DEFAULT_WINDOW_MINUTES
         cur = self.conn.execute(
             "INSERT INTO checkins (question, repeat, at_time, at_iso, window_minutes, kind) "
@@ -45,7 +67,8 @@ class Engine:
         self.conn.commit()
         row = self.conn.execute("SELECT * FROM checkins WHERE id = ?", (cur.lastrowid,)).fetchone()
         self._schedule(row)
-        return dict(row)
+        return {**dict(row), "fires_at": fires_at,
+                "confirm_to_user": f"scheduled, fires {fires_at}"}
 
     def list_checkins(self):
         return [dict(r) for r in self.conn.execute("SELECT * FROM checkins WHERE active = 1")]
