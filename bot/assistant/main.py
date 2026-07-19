@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime
 
 from nio import AsyncClient, LoginResponse, RoomCreateResponse, RoomMessageText
 
@@ -68,6 +69,7 @@ class Bot:
             return
         text = event.body.strip()
         log.info("owner: %s", text)
+        self.engine.anchor_time = datetime.now(config.TZ)
 
         resolved = await self.engine.resolve_pending()
         if text.startswith("!"):

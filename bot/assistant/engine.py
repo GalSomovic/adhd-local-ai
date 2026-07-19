@@ -25,6 +25,9 @@ class Engine:
         self.conn = conn
         self.send_message = send_message  # async fn(text)
         self.scheduler = AsyncIOScheduler(timezone=config.TZ)
+        # relative times ("in 3 minutes") count from when the user's message
+        # arrived, not from when the LLM finished processing it
+        self.anchor_time = None
 
     def start(self):
         for row in self.conn.execute("SELECT * FROM checkins WHERE active = 1").fetchall():
@@ -43,8 +46,13 @@ class Engine:
                        window_minutes=None, kind="checkin", in_minutes=None):
         now = datetime.now(config.TZ)
         if in_minutes is not None:
+            base = now
+            if self.anchor_time and (now - self.anchor_time) < timedelta(minutes=10):
+                base = self.anchor_time
+            when = base + timedelta(minutes=float(in_minutes))
+            when = max(when, now + timedelta(seconds=10))
             repeat = "once"
-            at_iso = (now + timedelta(minutes=float(in_minutes))).isoformat()
+            at_iso = when.isoformat()
         if repeat == "daily":
             if not at_time:
                 return {"error": "daily schedule requires at_time as HH:MM"}
