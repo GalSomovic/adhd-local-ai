@@ -27,9 +27,11 @@ def build(ctx):
                         "rings at full volume (bypasses mute) and keeps re-alerting until "
                         "acknowledged. Use when the user wants an alarm / שעון מעורר / to be "
                         "woken or paged at a specific time. repeat='daily' with at_time='HH:MM', "
-                        "or repeat='once' with at_iso='YYYY-MM-DDTHH:MM'. For RELATIVE "
-                        "times ('in 20 minutes', 'בעוד שעתיים') pass in_minutes and "
-                        "NOTHING else — never compute the timestamp yourself."
+                        "or repeat='once' with at_iso='YYYY-MM-DDTHH:MM'. If the user "
+                        "names a clock time ('ב-16:05', 'at 7am') pass at_time='HH:MM' "
+                        "and DO NOT pass in_minutes. Pass in_minutes ONLY for relative "
+                        "durations ('in 20 minutes', 'בעוד שעתיים') — never compute "
+                        "the timestamp yourself, and never pass both."
                     ),
                     "parameters": {
                         "type": "object",
@@ -55,9 +57,9 @@ def build(ctx):
                         "Create a check-in: the assistant asks the question at the given time "
                         "and escalates to a phone alarm if the user does not answer within "
                         "window_minutes. Use repeat='daily' with at_time='HH:MM' for recurring, "
-                        "repeat='once' with at_iso='YYYY-MM-DDTHH:MM' for one-off at an "
-                        "absolute time, or in_minutes alone for relative times — never "
-                        "compute the timestamp yourself."
+                        "at_time='HH:MM' for a one-off clock time, at_iso for a full date+time, "
+                        "or in_minutes ONLY for relative durations — never compute the "
+                        "timestamp yourself, and never pass both."
                     ),
                     "parameters": {
                         "type": "object",

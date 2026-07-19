@@ -1,6 +1,7 @@
 """Deterministic check-in + escalation engine. No LLM anywhere in this file."""
 
 import logging
+import re
 from datetime import datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -45,30 +46,16 @@ class Engine:
     def create_checkin(self, question, repeat, at_time=None, at_iso=None,
                        window_minutes=None, kind="checkin", in_minutes=None):
         now = datetime.now(config.TZ)
-        if in_minutes is not None:
-            base = now
-            if self.anchor_time and (now - self.anchor_time) < timedelta(minutes=10):
-                base = self.anchor_time
-            when = base + timedelta(minutes=float(in_minutes))
-            when = max(when, now + timedelta(seconds=10))
-            repeat = "once"
-            at_iso = when.isoformat()
         if repeat == "daily":
             if not at_time:
                 return {"error": "daily schedule requires at_time as HH:MM"}
             fires_at = f"daily at {at_time}"
         else:
-            if not at_iso:
-                return {"error": "one-off schedule requires at_iso or in_minutes"}
-            when = datetime.fromisoformat(at_iso)
-            if when.tzinfo is None:
-                when = when.replace(tzinfo=config.TZ)
-            if when <= now:
-                return {
-                    "error": f"requested time {when:%Y-%m-%d %H:%M} is in the past — "
-                             f"it is now {now:%Y-%m-%d %H:%M}. Use in_minutes for "
-                             f"relative times instead of computing the timestamp."
-                }
+            repeat = "once"
+            try:
+                when = self._resolve_once(now, at_iso, at_time, in_minutes)
+            except ValueError as exc:
+                return {"error": str(exc)}
             at_iso = when.isoformat()
             fires_at = f"{when:%Y-%m-%d %H:%M}"
         window = window_minutes or config.DEFAULT_WINDOW_MINUTES
@@ -93,6 +80,44 @@ class Engine:
         if job:
             job.remove()
         return {"cancelled": checkin_id}
+
+    def _resolve_once(self, now, at_iso, at_time, in_minutes):
+        """An absolute time always beats in_minutes — models tend to pass both."""
+        clock = None
+        if at_iso:
+            try:
+                when = datetime.fromisoformat(at_iso)
+                if when.tzinfo is None:
+                    when = when.replace(tzinfo=config.TZ)
+            except ValueError:
+                clock = at_iso
+        elif at_time:
+            clock = at_time
+        elif in_minutes is not None:
+            if float(in_minutes) <= 0:
+                raise ValueError("in_minutes must be positive")
+            base = now
+            if self.anchor_time and (now - self.anchor_time) < timedelta(minutes=10):
+                base = self.anchor_time
+            return max(base + timedelta(minutes=float(in_minutes)),
+                       now + timedelta(seconds=10))
+        else:
+            raise ValueError("one-off schedule requires at_iso, at_time or in_minutes")
+        if clock is not None:
+            m = re.fullmatch(r"\s*(\d{1,2}):(\d{2})\s*", clock)
+            if not m:
+                raise ValueError(
+                    f"cannot parse time {clock!r} — use ISO datetime, HH:MM or in_minutes"
+                )
+            when = now.replace(hour=int(m[1]), minute=int(m[2]), second=0, microsecond=0)
+            if when <= now:
+                when += timedelta(days=1)  # next occurrence, like a real alarm clock
+        if when <= now:
+            raise ValueError(
+                f"requested time {when:%Y-%m-%d %H:%M} is in the past — "
+                f"it is now {now:%Y-%m-%d %H:%M}"
+            )
+        return when
 
     def _schedule(self, row):
         job_id = f"checkin-{row['id']}"
