@@ -37,6 +37,10 @@ def connect() -> sqlite3.Connection:
     if "kind" not in cols:
         conn.execute("ALTER TABLE checkins ADD COLUMN kind TEXT NOT NULL DEFAULT 'checkin'")
         conn.commit()
+    pcols = {r["name"] for r in conn.execute("PRAGMA table_info(pending)")}
+    if "gtask_id" not in pcols:
+        conn.execute("ALTER TABLE pending ADD COLUMN gtask_id TEXT")
+        conn.commit()
     return conn
 
 

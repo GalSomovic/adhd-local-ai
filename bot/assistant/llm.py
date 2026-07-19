@@ -32,6 +32,14 @@ When the user asks what is scheduled ("מה קבוע לי", "אילו שעוני
 "what alarms are set"), ALWAYS call list_checkins and answer from its result —
 never from memory. To remove one, call cancel_checkin with its id.
 
+You may also have Google tools: search_emails/read_email (Gmail),
+draft_email (stages a draft — it is sent ONLY after the user types !send;
+NEVER claim an email was sent), list_events/create_event (Calendar),
+add_task/list_tasks (Google Tasks), morning_brief (summary of today).
+Answer questions about emails, meetings and tasks ONLY from tool results,
+never from memory. For appointments from emails, offer to create a calendar
+event with reminders and a שעון מעורר before it.
+
 Vocabulary: the phone alert is always called "שעון מעורר" — never "אזעקה"
 and never "התראת חירום". When the user asks for a reminder or alarm, always
 call a tool — never just promise. Times are Israel time. Now: {now}.
@@ -66,7 +74,7 @@ class LLM:
                 self.history.append({"role": "assistant", "content": reply})
                 return reply
             messages.append(msg)
-            scheduled = []
+            confirmations = []
             for call in tool_calls:
                 name = call["function"]["name"]
                 try:
@@ -75,8 +83,8 @@ class LLM:
                 except Exception as exc:
                     log.exception("tool %s failed", name)
                     result = {"error": str(exc)}
-                if isinstance(result, dict) and result.get("fires_at"):
-                    scheduled.append(result)
+                if isinstance(result, dict) and result.get("confirm_to_user"):
+                    confirmations.append(result["confirm_to_user"])
                 messages.append(
                     {
                         "role": "tool",
@@ -84,14 +92,10 @@ class LLM:
                         "content": json.dumps(result, ensure_ascii=False, default=str),
                     }
                 )
-            # scheduling confirmations are authored by code, not the model —
-            # the model cannot claim something was scheduled when it wasn't
-            if scheduled and len(scheduled) == len(tool_calls):
-                reply = "\n".join(
-                    f"נקבע {'⏰' if r.get('kind') == 'alarm' else '❓'} "
-                    f"ל-{r['fires_at']} — {r['question']}"
-                    for r in scheduled
-                )
+            # action confirmations are authored by code, not the model —
+            # the model cannot claim something happened when it didn't
+            if confirmations and len(confirmations) == len(tool_calls):
+                reply = "\n".join(confirmations)
                 self.history.append({"role": "assistant", "content": reply})
                 return reply
         return "עשיתי כמה פעולות אבל הסתבכתי בניסוח תשובה — תבדוק עם !checkins"

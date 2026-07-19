@@ -15,6 +15,11 @@ PUSHOVER_USER = os.environ["PUSHOVER_USER"]
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 TZ = ZoneInfo(os.environ.get("TZ", "Asia/Jerusalem"))
 
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_REFRESH_TOKEN = os.environ.get("GOOGLE_REFRESH_TOKEN", "")
+BRIEF_TIME = os.environ.get("BRIEF_TIME", "07:00")
+
 DEFAULT_WINDOW_MINUTES = int(os.environ.get("DEFAULT_WINDOW_MINUTES", "30"))
 ALARM_RETRY_SECONDS = int(os.environ.get("ALARM_RETRY_SECONDS", "30"))
 ALARM_EXPIRE_SECONDS = int(os.environ.get("ALARM_EXPIRE_SECONDS", "600"))

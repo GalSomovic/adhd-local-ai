@@ -29,6 +29,9 @@ class Engine:
         # relative times ("in 3 minutes") count from when the user's message
         # arrived, not from when the LLM finished processing it
         self.anchor_time = None
+        # optional integrations, wired by main when Google creds exist
+        self.on_event = None      # async fn(action, pending_id, question, kind)
+        self.busy_checker = None  # async fn() -> bool (in a meeting right now?)
 
     def start(self):
         for row in self.conn.execute("SELECT * FROM checkins WHERE active = 1").fetchall():
@@ -67,8 +70,9 @@ class Engine:
         self.conn.commit()
         row = self.conn.execute("SELECT * FROM checkins WHERE id = ?", (cur.lastrowid,)).fetchone()
         self._schedule(row)
+        icon = "⏰" if kind == "alarm" else "❓"
         return {**dict(row), "fires_at": fires_at,
-                "confirm_to_user": f"scheduled, fires {fires_at}"}
+                "confirm_to_user": f"נקבע {icon} ל-{fires_at} — {question}"}
 
     def list_checkins(self):
         return [dict(r) for r in self.conn.execute("SELECT * FROM checkins WHERE active = 1")]
@@ -154,6 +158,7 @@ class Engine:
         if row["repeat"] == "once":
             self.conn.execute("UPDATE checkins SET active = 0 WHERE id = ?", (checkin_id,))
         self.conn.commit()
+        await self._emit("fired", cur.lastrowid, row["question"], row["kind"])
         if is_alarm:
             await self.send_message(f"⏰ שעון מעורר: {row['question']}")
             pending = self.conn.execute(
@@ -165,6 +170,14 @@ class Engine:
                 f"❓ {row['question']}\n"
                 f"(ענה תוך {row['window_minutes']} דקות, אחרת אני מפעיל שעון מעורר ⏰)"
             )
+
+    async def _emit(self, action, pending_id, question, kind="checkin"):
+        if not self.on_event:
+            return
+        try:
+            await self.on_event(action, pending_id, question, kind)
+        except Exception:
+            log.exception("on_event(%s) failed", action)
 
     async def resolve_pending(self) -> int:
         """Owner replied in chat: settle everything open, cancelling live alarms."""
@@ -181,13 +194,31 @@ class Engine:
                 "UPDATE pending SET status = 'answered' WHERE id = ?", (row["id"],)
             )
         self.conn.commit()
+        for row in open_rows:
+            await self._emit("closed", row["id"], row["question"])
         return len(open_rows)
 
     async def _tick(self):
         now = datetime.now(config.TZ)
-        for row in self.conn.execute("SELECT * FROM pending WHERE status = 'waiting'"):
-            if datetime.fromisoformat(row["deadline"]) <= now:
-                await self._escalate(row, "escalated")
+        for row in self.conn.execute(
+            "SELECT p.*, c.kind AS ckind FROM pending p "
+            "LEFT JOIN checkins c ON c.id = p.checkin_id WHERE p.status = 'waiting'"
+        ).fetchall():
+            if datetime.fromisoformat(row["deadline"]) > now:
+                continue
+            if row["ckind"] == "checkin" and self.busy_checker:
+                try:
+                    if await self.busy_checker():
+                        log.info("pending %s: in a meeting, holding the alarm", row["id"])
+                        self.conn.execute(
+                            "UPDATE pending SET deadline = ? WHERE id = ?",
+                            ((now + timedelta(minutes=5)).isoformat(), row["id"]),
+                        )
+                        self.conn.commit()
+                        continue
+                except Exception:
+                    log.exception("busy check failed, escalating anyway")
+            await self._escalate(row, "escalated")
         for row in self.conn.execute(
             "SELECT * FROM pending WHERE status IN ('escalated', 'realarmed')"
         ):
@@ -215,6 +246,7 @@ class Engine:
         if status.get("acknowledged"):
             self.conn.execute("UPDATE pending SET status = 'acked' WHERE id = ?", (row["id"],))
             self.conn.commit()
+            await self._emit("closed", row["id"], row["question"])
             await self.send_message(f"כיבית את השעון המעורר ⏰✅ — {row['question']}")
         elif status.get("expired"):
             if row["status"] == "escalated":
@@ -224,4 +256,5 @@ class Engine:
                     "UPDATE pending SET status = 'missed' WHERE id = ?", (row["id"],)
                 )
                 self.conn.commit()
+                await self._emit("closed", row["id"], row["question"])
                 await self.send_message(f"⚠️ גם השעון המעורר השני לא נענה: {row['question']}")

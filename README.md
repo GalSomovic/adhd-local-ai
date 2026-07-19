@@ -134,6 +134,41 @@ The bot creates a private room and invites you on first start. Accept the invite
 - `תזכיר לי לקחת תרופה כל בוקר ב-8:00, ואם אני לא עונה תוך 20 דקות — אזעקה`
 - Test the siren end-to-end: `!testalarm` (ignore the chat message and let it escalate).
 
+## Google layer setup (one-time)
+
+1. In [Google Cloud Console](https://console.cloud.google.com): create a project →
+   **APIs & Services → Library** → enable **Gmail API**, **Google Calendar API**,
+   **Google Tasks API**.
+2. **APIs & Services → OAuth consent screen**: External, fill the two required
+   fields, add your Gmail as a test user — then set **Publishing status: In
+   production** (otherwise the refresh token dies every 7 days; the "unverified
+   app" warning during login is fine, it's your own app).
+3. **Credentials → Create credentials → OAuth client ID → Desktop app** →
+   download the JSON as `client_secret.json`.
+4. On the Mac:
+   ```bash
+   pip install google-auth-oauthlib
+   python3 scripts/google-auth.py client_secret.json
+   ```
+   A browser opens; log in with the Gmail account, click through the
+   unverified-app warning, approve the scopes. The script prints three values.
+5. Add them to the bot secret and restart:
+   ```bash
+   CTX=admin@alongames-remote
+   kubectl --context $CTX -n assistant patch secret assistant-bot -p "{\"stringData\":{
+     \"GOOGLE_CLIENT_ID\":\"<value>\",
+     \"GOOGLE_CLIENT_SECRET\":\"<value>\",
+     \"GOOGLE_REFRESH_TOKEN\":\"<value>\"}}"
+   kubectl --context $CTX -n assistant rollout restart deploy/assistant-bot
+   ```
+
+What it unlocks: Gmail search/read + staged send (`!send` / `!discard`),
+Calendar list/create, Google Tasks (every fired שעון מעורר mirrors into an
+"ADHD Assistant" list and completes when answered), the `!brief` morning brief
+(also auto-sent daily at `BRIEF_TIME`, default 07:00), and meeting-aware
+escalation (check-in alarms hold while the calendar says you're busy;
+explicit שעון מעורר alarms ring regardless).
+
 ## Security notes
 - Nothing leaves the cluster except: Pushover API calls, Apple/Matrix push wake-ups,
   and (later) Google/Graph API calls. Chat content lives on your node.

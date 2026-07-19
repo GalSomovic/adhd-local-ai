@@ -5,7 +5,7 @@ from datetime import datetime
 
 from nio import AsyncClient, LoginResponse, RoomCreateResponse, RoomMessageText
 
-from . import config, pushover, store
+from . import config, gapi, pushover, store
 from .engine import Engine
 from .llm import LLM
 from .skills import build_registry
@@ -18,6 +18,8 @@ HELP = """\
 !checkins — רשימת צ'ק-אינים ושעונים מעוררים פעילים
 !cancel <id> — ביטול לפי מזהה
 !testalarm — בדיקת שעון מעורר מקצה לקצה
+!brief — הברִיף של היום (יומן + מיילים + קבועים)
+!send — שליחת טיוטת המייל הממתינה | !discard — ביטולה
 !help — ההודעה הזאת
 כל הודעה אחרת הולכת לעוזר עצמו."""
 
@@ -28,8 +30,40 @@ class Bot:
         self.client = AsyncClient(config.MATRIX_HOMESERVER, config.MATRIX_USER)
         self.room_id = None
         self.engine = Engine(self.conn, self.send)
-        schemas, dispatch = build_registry({"engine": self.engine})
+        schemas, dispatch = build_registry({"engine": self.engine, "conn": self.conn})
         self.llm = LLM(schemas, dispatch)
+        if gapi.enabled():
+            self._wire_google()
+
+    def _wire_google(self):
+        from .skills import brief, gcal, gtasks
+
+        async def on_event(action, pending_id, question, kind):
+            if action == "fired":
+                icon = "⏰" if kind == "alarm" else "❓"
+                task_id = await gtasks.add_task(self.conn, f"{icon} {question}")
+                self.conn.execute(
+                    "UPDATE pending SET gtask_id = ? WHERE id = ?", (task_id, pending_id)
+                )
+                self.conn.commit()
+            else:
+                row = self.conn.execute(
+                    "SELECT gtask_id FROM pending WHERE id = ?", (pending_id,)
+                ).fetchone()
+                if row and row["gtask_id"]:
+                    await gtasks.complete_task(self.conn, row["gtask_id"])
+
+        self.engine.on_event = on_event
+        self.engine.busy_checker = gcal.busy_now
+        if config.BRIEF_TIME:
+            hour, minute = config.BRIEF_TIME.split(":")
+
+            async def send_brief():
+                await self.send(await brief.build_brief(self.engine))
+
+            self.engine.scheduler.add_job(
+                send_brief, "cron", hour=int(hour), minute=int(minute), id="morning-brief"
+            )
 
     async def send(self, text: str):
         log.info("bot: %s", text)
@@ -127,6 +161,15 @@ class Bot:
         elif cmd == "!testalarm":
             receipt = await pushover.send_emergency("בדיקת שעון מעורר — תאשר בטלפון")
             await self.send(f"שעון מעורר לבדיקה נשלח ⏰ (receipt {receipt})")
+        elif cmd == "!brief" and gapi.enabled():
+            from .skills import brief
+            await self.send(await brief.build_brief(self.engine))
+        elif cmd == "!send" and gapi.enabled():
+            from .skills import gmail_skill
+            await self.send(await gmail_skill.send_staged(self.conn))
+        elif cmd == "!discard" and gapi.enabled():
+            from .skills import gmail_skill
+            await self.send(gmail_skill.discard_staged(self.conn))
         else:
             await self.send(HELP)
 
