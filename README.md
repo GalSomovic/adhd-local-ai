@@ -145,22 +145,14 @@ The bot creates a private room and invites you on first start. Accept the invite
    app" warning during login is fine, it's your own app).
 3. **Credentials → Create credentials → OAuth client ID → Desktop app** →
    download the JSON as `client_secret.json`.
-4. On the Mac:
+4. On the Mac (uv manages the dependency, nothing installed globally):
    ```bash
-   pip install google-auth-oauthlib
-   python3 scripts/google-auth.py client_secret.json
+   uv run scripts/google-auth.py ~/Downloads/client_secret.json
    ```
    A browser opens; log in with the Gmail account, click through the
-   unverified-app warning, approve the scopes. The script prints three values.
-5. Add them to the bot secret and restart:
-   ```bash
-   CTX=admin@alongames-remote
-   kubectl --context $CTX -n assistant patch secret assistant-bot -p "{\"stringData\":{
-     \"GOOGLE_CLIENT_ID\":\"<value>\",
-     \"GOOGLE_CLIENT_SECRET\":\"<value>\",
-     \"GOOGLE_REFRESH_TOKEN\":\"<value>\"}}"
-   kubectl --context $CTX -n assistant rollout restart deploy/assistant-bot
-   ```
+   unverified-app warning, approve the scopes. The script then patches the
+   `assistant-bot` Secret on the cluster and restarts the bot itself —
+   no secrets printed or copy-pasted. Delete `client_secret.json` after.
 
 What it unlocks: Gmail search/read + staged send (`!send` / `!discard`),
 Calendar list/create, Google Tasks (every fired שעון מעורר mirrors into an
